@@ -1,5 +1,6 @@
 import sys
 import subprocess
+import tempfile
 from clams.serve import ClamApp
 from clams.serialize import *
 from clams.vocab import AnnotationTypes
@@ -7,8 +8,9 @@ from clams.vocab import MediaTypes
 from clams.restify import Restifier
 from lapps.discriminators import Uri  # TODO move to clams
 
-PYTHON = sys.executable
+PYTHON_BIN = sys.executable
 GENTLEFA_BIN = "/opt/gentle/align.py"
+FFMPEG_BIN = "ffmpeg"
 
 class GentleFA(ClamApp):
     def appmetadata(self):
@@ -29,17 +31,26 @@ class GentleFA(ClamApp):
 
     @staticmethod
     def run_gentle(video_path, text_path):
-        cmd = [PYTHON, GENTLEFA_BIN, video_path, text_path]
-        gentle_pipe = subprocess.Popen(cmd, stdout=subprocess.PIPE)
+        tmp_wav = tempfile.mkstemp()[1]
+        demux_cmd = [FFMPEG_BIN, "-i", video_path, "-y", "-vn", "-f", "wav", "-ab", "8000", tmp_wav]
+        subprocess.run(demux_cmd)
+
+        forcedalign_cmd = [PYTHON_BIN, GENTLEFA_BIN, tmp_wav, text_path]
+        gentle_pipe = subprocess.Popen(forcedalign_cmd, stdout=subprocess.PIPE)
         return gentle_pipe.communicate()[0]
 
     @staticmethod
-    def add_fa_ann(view, window, faid, transcript_text):
+    def get_time_obj(fp_seconds):
+        i_part = int(fp_seconds)
+        f_part = int((fp_seconds % 1) * 1000000)
+        return datetime.time(second=i_part, microsecond=f_part)
+
+    def add_fa_ann(self, view, window, faid, transcript_text):
         fa_ann = view.new_annotation(f"fa_{faid}")
 
         fa_ann.attype = AnnotationTypes.FA
-        fa_ann.start = round(window[0]["start"], 2)
-        fa_ann.end = round(window[-1]["start"], 2)
+        fa_ann.start = self.get_time_obj(window[0]["start"]).isoformat()
+        fa_ann.end = self.get_time_obj(window[-1]["end"]).isoformat()
         start_offset = window[0]["startOffset"]
         end_offset = window[-1]["endOffset"]
         fa_ann.add_feature("start_offset", start_offset)
@@ -71,6 +82,7 @@ class GentleFA(ClamApp):
             tok_ann.end = word["endOffset"]
             tok_ann.add_feature("word", word["word"])
             tid += 1
+            # TODO (krim @ 11/7/19): consider when encountering many "failed" tokens when `window` is empty
             if word["case"] == "success":
                 window.append(word)
                 if not len(window) < sync_window:
