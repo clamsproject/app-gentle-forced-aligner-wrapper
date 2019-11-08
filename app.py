@@ -52,7 +52,8 @@ class GentleFA(ClamApp):
         fa_ann = view.new_annotation(f"fa_{faid}")
 
         fa_ann.attype = AnnotationTypes.FA
-        fa_ann.start = self.get_time_obj(window[0]["start"]).isoformat()
+        fa_ann.start = self.get_time_obj([word for word in window if "start" in word][0]["start"]).isoformat()
+        # the way that words are appended to the window ensures the last one always has successful alignment
         fa_ann.end = self.get_time_obj(window[-1]["end"]).isoformat()
         start_offset = window[0]["startOffset"]
         end_offset = window[-1]["endOffset"]
@@ -78,6 +79,7 @@ class GentleFA(ClamApp):
         tid = 1
         faid = 1
         window = []
+        aligned_tokens = 0
         for word in fa["words"]:
             tok_ann = new_view.new_annotation(f"tok_{tid}")
             tok_ann.attype = Uri.TOKEN
@@ -85,13 +87,14 @@ class GentleFA(ClamApp):
             tok_ann.end = word["endOffset"]
             tok_ann.add_feature("word", word["word"])
             tid += 1
-            # TODO (krim @ 11/7/19): consider when encountering many "failed" tokens when `window` is empty
+            window.append(word)
             if word["case"] == "success":
-                window.append(word)
-                if not len(window) < sync_window:
-                    self.add_fa_ann(new_view, window, faid, transcript_text)
-                    window = []
-                    faid += 1
+                aligned_tokens += 1
+            if not aligned_tokens < sync_window:
+                self.add_fa_ann(new_view, window, faid, transcript_text)
+                window = []
+                aligned_tokens = 0
+                faid += 1
         if len(window) > 0:
             self.add_fa_ann(new_view, window, faid, transcript_text)
 
