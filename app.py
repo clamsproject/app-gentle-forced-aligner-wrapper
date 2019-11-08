@@ -43,7 +43,10 @@ class GentleFA(ClamApp):
     def get_time_obj(fp_seconds):
         i_part = int(fp_seconds)
         f_part = int((fp_seconds % 1) * 1000000)
-        return datetime.time(second=i_part, microsecond=f_part)
+        h = i_part // 3600
+        m = (i_part % 3600) // 60
+        s = i_part % 60
+        return datetime.time(hour=h, minute=m, second=s, microsecond=f_part)
 
     def add_fa_ann(self, view, window, faid, transcript_text):
         fa_ann = view.new_annotation(f"fa_{faid}")
