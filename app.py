@@ -33,10 +33,10 @@ class GentleFA(ClamApp):
     def run_gentle(video_path, text_path):
         tmp_wav = tempfile.mkstemp()[1]
         demux_cmd = [FFMPEG_BIN, "-i", video_path, "-y", "-vn", "-f", "wav", "-ab", "8000", tmp_wav]
-        subprocess.run(demux_cmd)
+        subprocess.run(demux_cmd, stderr=subprocess.DEVNULL)
 
         forcedalign_cmd = [PYTHON_BIN, GENTLEFA_BIN, tmp_wav, text_path]
-        gentle_pipe = subprocess.Popen(forcedalign_cmd, stdout=subprocess.PIPE)
+        gentle_pipe = subprocess.Popen(forcedalign_cmd, stdout=subprocess.PIPE, stderr=subprocess.DEVNULL)
         return gentle_pipe.communicate()[0]
 
     @staticmethod
