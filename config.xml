@@ -1,0 +1,15 @@
+<tool id="gentle" name="Gentle Forced Aligner" version="0.0.1">
+  <description>
+    Force align transcript to video using gentle FA tool
+  </description>
+  <command interpreter="python3">cli.py $input $output</command>
+  <inputs>
+      <param name="input" type="data" format="json" label="M.Video + M.Text"/>
+  </inputs>
+  <outputs>
+    <data name="output" format="json" label="Gentle Forced alignment"/>
+  </outputs>
+  <help>
+      Gentle forced aligner
+  </help>
+</tool>
