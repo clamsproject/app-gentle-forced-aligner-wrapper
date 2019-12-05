@@ -9,7 +9,5 @@
   <outputs>
     <data name="output" format="json" label="Gentle Forced alignment"/>
   </outputs>
-  <help>
-      Gentle forced aligner
-  </help>
+  <help>Audio,Alignment</help>
 </tool>
