@@ -1,13 +1,13 @@
-<tool id="gentle" name="Gentle Forced Aligner" version="0.0.1">
+<tool id="gentle-pretokens" name="Gentle Forced Aligner (pretokenized)" version="0.0.1">
   <description>
-    Force align transcript to video using gentle FA tool
+    Force align transcript to video using gentle FA tool and existing tokenization view in MMIF
   </description>
   <command interpreter="python3">cli.py $input $output</command>
   <inputs>
-      <param name="input" type="data" format="json" label="M.Video + M.Text"/>
+      <param name="input" type="data" format="json" label="M.Video + M.Text + A.T.TOKEN"/>
   </inputs>
   <outputs>
-    <data name="output" format="json" label="Gentle Forced alignment"/>
+    <data name="output" format="json" label="Gentle Forced alignment (pretokenized)"/>
   </outputs>
   <help>
       Gentle forced aligner
