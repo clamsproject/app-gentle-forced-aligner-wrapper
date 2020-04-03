@@ -7,6 +7,7 @@ RUN apt-get install -y ffmpeg
 RUN apt-get install -y gfortran libblas-dev liblapack-dev python2.7
 RUN git clone https://github.com/lowerquality/gentle.git /opt/gentle
 WORKDIR /opt/gentle
+RUN git checkout 1aa3f58ad01b728eed3ec21ffce4946bd39b1f3a
 RUN bash ./install.sh
 
 COPY ./ ./app
