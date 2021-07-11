@@ -1,20 +1,44 @@
-FROM ubuntu:19.10
+FROM clamsproject/clams-python-ffmpeg:0.4.4
 
-RUN apt-get update && \
-    apt-get install -y git python3 python3-pip python3-setuptools
+LABEL maintainer="CLAMS Team <admin@clams.ai>"
+LABEL issues="https://github.com/clamsproject/app-gentle-forced-aligner-wrapper/issues"
 
-RUN apt-get install -y ffmpeg
-RUN apt-get install -y gfortran libblas-dev liblapack-dev python2.7
+RUN apt update 
+RUN apt install -y wget unzip git subversion python2.7
+RUN apt install -y build-essential zlib1g-dev automake autoconf sox gfortran libtool 
+
+# install gentle
 RUN git clone https://github.com/lowerquality/gentle.git /opt/gentle
 WORKDIR /opt/gentle
-RUN git checkout 1aa3f58ad01b728eed3ec21ffce4946bd39b1f3a
-RUN sed -i.bak 's/wget/wget --no-check-certificate/g' install_models.sh
-RUN bash ./install.sh
+RUN git checkout 2148efc
+RUN git submodule init
+RUN git submodule update
+## prep kaldi 
+ENV MAKEFLAGS=' -j8'
+# RUN git clone https://github.com/kaldi-asr/kaldi /opt/gentle/ext/kaldi
+# RUN git --git-dir /opt/gentle/ext/kaldi/.git checkout 7ffc9ddeb3c8436e16aece88364462c89672a183
+WORKDIR /opt/gentle/ext/kaldi/tools
+RUN make
+RUN ./extras/install_openblas.sh
+WORKDIR /opt/gentle/ext/kaldi/src
+RUN ./configure --static --static-math=yes --static-fst=yes --use-cuda=no --openblas-root=../tools/OpenBLAS/install
+RUN make depend
+## build graph binaries that's actually used
+WORKDIR /opt/gentle/ext
+RUN make depend 
+RUN make
+## removed build residue
+RUN rm -rf kaldi *o
+## and finally install `gentle` python package 
+WORKDIR /opt/gentle
+RUN python3 -m pip install incremental twisted
+RUN python3 setup.py develop
+RUN ./install_models.sh
 
-COPY ./ ./app
-WORKDIR ./app
-RUN pip3 install -r requirements.txt
+COPY . /app
+WORKDIR /app
 
+# Install python app dependencies
+RUN python3 -m pip install -r requirements.txt
 
-ENTRYPOINT ["python3"]
-CMD ["app.py"]
+CMD ["python3", "app.py", "--production"]
