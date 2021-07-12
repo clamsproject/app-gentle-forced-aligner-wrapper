@@ -1,115 +1,169 @@
-import sys
-import subprocess
+import argparse
+import multiprocessing
 import tempfile
-from clams.serve import ClamApp
-from clams.serialize import *
-from clams.vocab import AnnotationTypes
-from clams.vocab import MediaTypes
+
+import concatrim
+import gentle
+from clams.app import ClamsApp
+from clams.appmetadata import AppMetadata
 from clams.restify import Restifier
-from lapps.discriminators import Uri  # TODO move to clams
+from gentle import metasentence
+from gentle.transcription import Word
+from lapps.discriminators import Uri
+from mmif.serialize import *
+from mmif.vocabulary import AnnotationTypes
+from mmif.vocabulary import DocumentTypes
 
-PYTHON_BIN = sys.executable
-GENTLEFA_BIN = "/opt/gentle/align.py"
-FFMPEG_BIN = "ffmpeg"
+__version__ = '0.1.0'
 
-class GentleFA(ClamApp):
-    def appmetadata(self):
-        metadata = {
-            "name": "Gentle Forced Aligner Wrapper",
-            "description": "This tool align transcript and audio track using Gentle. "
-                           "Gentle is a robust yet lenient forced aligner built on Kaldi."
-                           "See https://lowerquality.com/gentle/ .",
-            "vendor": "Team CLAMS",
-            "requires": [MediaTypes.T, MediaTypes.V, Uri.TOKEN],
-            "produces": [AnnotationTypes.FA],
-        }
+
+class GentleForcedAligner(ClamsApp):
+
+    silence_gap = 1.0  # seconds to insert between segments when patchworking
+    # multipliers to convert to milliseconds
+    timeunit_conv = {'milliseconds': 1, 'seconds': 1000}
+
+    def _appmetadata(self) -> AppMetadata:
+        metadata = AppMetadata(
+            name="Gentle Forced Aligner Wrapper",
+            description="This CLAMS app aligns transcript and audio track using Gentle. "
+                        "Gentle is a robust yet lenient forced aligner built on Kaldi."
+                        "This app only works when Gentle is already installed locally."
+                        "Unfortunately, Gentle is not distributed as a Python package distribution."
+                        "To get Gentle installation instruction, see https://lowerquality.com/gentle/ "
+                        "Make sure install Gentle from the git commit specified in ``wrappee_version`` "
+                        "in this metadata.",
+            app_version=__version__,
+            wrappee_version='2148efc',
+            license='MIT',
+            wrappee_license='MIT',
+            identifier=f"http://apps.clams.ai/gentle-forced-aligner-wrapper/{__version__}",
+        )
+        metadata.add_input(DocumentTypes.TextDocument)
+        metadata.add_input(DocumentTypes.AudioDocument)
+        metadata.add_input(AnnotationTypes.TimeFrame, required=False, frameType='speech')
+        metadata.add_input(Uri.TOKEN, required=False)
+        
+        metadata.add_output(Uri.TOKEN)
+        metadata.add_output(AnnotationTypes.TimeFrame, frameType='speech')
+        metadata.add_output(AnnotationTypes.Alignment)  # TODO (krim @ 7/9/21): specify src/tgt types?
+        
+        metadata.add_parameter(name='use_speech_segmentation', type='boolean', 
+                               description='When set true, use exising "speech"-typed ``TimeFrame`` annotations '
+                                           'and run aligner only on those frames, instead of entire audio files.', 
+                               default='true')
+        metadata.add_parameter(name='use_tokenization', type='boolean',
+                               description='When set true, ``Alignment`` annotation output will honor existing '
+                                           'latest tokenization (``Token`` annotations). Due to a limitation of the '
+                                           'way Kaldi reads in English tokens, existing tokens must not contain '
+                                           'whitespaces. ',
+                               default='true')
         return metadata
 
-    def sniff(self, mmif):
-        # this mock-up method always returns true
-        return True
-
     @staticmethod
-    def run_gentle(video_path, text_path):
-        tmp_wav = tempfile.mkstemp()[1]
-        demux_cmd = [FFMPEG_BIN, "-i", video_path, "-y", "-vn", "-f", "wav", "-ab", "8000", tmp_wav]
-        subprocess.run(demux_cmd, stderr=subprocess.DEVNULL)
+    def run_gentle(audio_path: str, text_content: str, tokenization_view: View = None):
 
-        forcedalign_cmd = [PYTHON_BIN, GENTLEFA_BIN, tmp_wav, text_path]
-        gentle_pipe = subprocess.Popen(forcedalign_cmd, stdout=subprocess.PIPE, stderr=subprocess.DEVNULL)
-        return gentle_pipe.communicate()[0]
+        with gentle.resampled(audio_path) as audio_file:
+            resources = gentle.Resources()
+            aligner = gentle.ForcedAligner(resources, text_content, 
+                                           nthreads=multiprocessing.cpu_count(), 
+                                           disfluencies={'uh', 'um'},
+                                           disfluency=True,
+                                           conservative=False)
+            if tokenization_view is not None:
+                aligner.ms._seq = []
+                for token in tokenization_view.get_annotations(Uri.TOKEN):
+                    print(token.serialize(pretty=True))
+                    start = token.properties['start']
+                    end = token.properties['end']
+                    token_text = text_content[start:end]
+                    kaldi_token = {'start': start, 'end': end, 
+                                   'token': metasentence.kaldi_normalize(token_text, aligner.ms.vocab)}
+                    aligner.ms._seq.append(kaldi_token)
+            result = aligner.transcribe(audio_file)
+            return result
 
-    @staticmethod
-    def get_time_obj(fp_seconds):
-        i_part = int(fp_seconds)
-        f_part = int((fp_seconds % 1) * 1000000)
-        h = i_part // 3600
-        m = (i_part % 3600) // 60
-        s = i_part % 60
-        return datetime.time(hour=h, minute=m, second=s, microsecond=f_part)
+    def _annotate(self, mmif, **params):
 
-    def add_fa_ann(self, view, window, faid, transcript_text, pretokenzized_viewid, pretokenized_starts, pretokenized_ends):
-        fa_ann = view.new_annotation(f"fa_{faid}")
-
-        fa_ann.attype = AnnotationTypes.FA
-        fa_ann.start = self.get_time_obj([word for word in window if "start" in word][0]["start"]).isoformat()
-        # the way that words are appended to the window ensures the last one always has successful alignment
-        fa_ann.end = self.get_time_obj(window[-1]["end"]).isoformat()
-        fa_ann.add_feature("target_tokens",
-                           [f'{pretokenzized_viewid}:{pretokenized_starts[word["startOffset"]]}'
-                            for word in window
-                            # due to the different tokenization scheme,
-                            # some tokens from gentle might not exist in the existing tokenization
-                            if word["startOffset"] in pretokenized_starts])
-        fa_ann.add_feature("text", transcript_text[window[0]["startOffset"]:window[-1]["endOffset"]])
-        return fa_ann
-
-    def annotate(self, mmif):
-
-        if type(mmif) is not Mmif:
+        if not isinstance(mmif, Mmif):
             mmif = Mmif(mmif)
         new_view = mmif.new_view()
-        new_view.new_contain(AnnotationTypes.FA, self.__class__.__name__)
+        self.sign_view(new_view, self.get_configuration(**params))
+        new_view.new_contain(AnnotationTypes.TimeFrame, timeUnit='milliseconds')
+        new_view.new_contain(AnnotationTypes.Alignment, sourceType=Uri.TOKEN, targetType=AnnotationTypes.TimeFrame)
+        use_speech_segmentation = params.get('use_speech_segmentation', True)
+        use_tokenization = params.get('use_tokenization', True)
+        
+        # get paths from the first of each types
+        audio = mmif.get_documents_by_type(DocumentTypes.AudioDocument)[0]
+        transcript = mmif.get_documents_by_type(DocumentTypes.TextDocument)[0]
+        audio_f = audio.location_path()
+        trimmer = concatrim.Concatrimmer(audio_f, 1000)
+        
+        if use_speech_segmentation:
+            segment_views = [view for view in mmif.get_views_for_document(audio.id) 
+                                 if AnnotationTypes.TimeFrame in view.metadata.contains]
 
-        try:
+            if len(segment_views) > 1:
+                # TODO (krim @ 11/30/20): we might want to actually handle 
+                # this situation; e.g. for evaluating multiple segmenter
+                raise ValueError('got multiple segmentation views for a document with TimeFrames')
+            elif len(segment_views) == 1:
+                view = segment_views[0]
+                timeunit = view.metadata.contains[AnnotationTypes.TimeFrame]['timeUnit']
+                for ann in view.get_annotations(AnnotationTypes.TimeFrame, frameType='speech'):
+                    trimmer.add_spans((int(ann.properties['start'] * self.timeunit_conv[timeunit]),
+                                       int(ann.properties['end'] * self.timeunit_conv[timeunit])))
+                outdir = tempfile.TemporaryDirectory()
+                audio_f = trimmer.concatrim(outdir.name)
+                
+        if use_tokenization:
             token_view = mmif.get_view_contains(Uri.TOKEN)
-        except KeyError:
-            # TODO (krim @ 11/8/19): mmif has to have a helper code to return errors
-            return ""
-        pre_tokens_start = {}
-        pre_tokens_end = {}
-        for ann in token_view['annotations']:
-            if ann['attype'] == Uri.TOKEN:
-                pre_tokens_start[ann['start']] = ann['id']
-                pre_tokens_end[ann['end']] = ann['id']
-        transcript_location = mmif.get_medium_location(MediaTypes.T)
-        audio_location = mmif.get_medium_location(MediaTypes.V)
-        fa = json.loads(self.run_gentle(audio_location, transcript_location))
-        transcript_text = open(transcript_location).read()
+        else:
+            token_view = None
+        if transcript.location == '':
+            transcript_text = transcript.text_value
+        else:
+            with open(transcript.location_path()) as transcript_file:
+                transcript_text = transcript_file.read()
+            
+        gentle_alignment = self.run_gentle(audio_f, transcript_text, token_view)
+        for pre_token, gentle_word in zip(token_view.get_annotations(Uri.TOKEN) if token_view is not None else iter(lambda: None, 1),
+                                          gentle_alignment.words):  # result.words must be a sorted list of Word objects
+            if pre_token is None:
+                token_ann = new_view.new_annotation(Uri.TOKEN,
+                                                    start=gentle_word.startOffset,
+                                                    end=gentle_word.endOffset,
+                                                    word=gentle_word.word,
+                                                    document=transcript.id)
+                token_id = token_ann.id
+            else:
+                token_id = f"{token_view.id}:{pre_token.id}"
+                
+            if gentle_word.case == Word.SUCCESS:  # means this word is successfully aligned
+                tf_ann = new_view.new_annotation(AnnotationTypes.TimeFrame,
+                                                 frameType='speech', 
+                                                 start=trimmer.conv_to_original(int(self.timeunit_conv['seconds'] * gentle_word.start)),
+                                                 end=trimmer.conv_to_original(int(self.timeunit_conv['seconds'] * gentle_word.end)))
+                new_view.new_annotation(AnnotationTypes.Alignment, 
+                                        source=token_id, 
+                                        target=tf_ann.id)
 
-        sync_window = 10
-        tid = 1
-        faid = 1
-        window = []
-        aligned_tokens = 0
-        for word in fa["words"]:
-            window.append(word)
-            if word["case"] == "success":
-                aligned_tokens += 1
-            if not aligned_tokens < sync_window:
-                self.add_fa_ann(new_view, window, faid, transcript_text, token_view['id'], pre_tokens_start, pre_tokens_end)
-                window = []
-                aligned_tokens = 0
-                faid += 1
-        if len(window) > 0:
-            self.add_fa_ann(new_view, window, faid, transcript_text, token_view['id'], pre_tokens_start, pre_tokens_end)
-
-        for contain in new_view.contains.keys():
-            mmif.contains.update({contain: new_view.id})
         return mmif
 
 
 if __name__ == "__main__":
-    gentle = GentleFA()
-    gentle_service = Restifier(gentle)
-    gentle_service.run()
+    parser = argparse.ArgumentParser()
+    parser.add_argument(
+        '--production',
+        action='store_true',
+        help='run gunicorn server'
+    )
+    parsed_args = parser.parse_args()
+
+    gentlewrapper = GentleForcedAligner()
+    gentle_service = Restifier(gentlewrapper)
+    if parsed_args.production:
+        gentle_service.serve_production()
+    else:
+        gentle_service.run()
