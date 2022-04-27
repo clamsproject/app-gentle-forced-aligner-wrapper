@@ -14,7 +14,7 @@ from mmif.serialize import *
 from mmif.vocabulary import AnnotationTypes
 from mmif.vocabulary import DocumentTypes
 
-__version__ = '0.1.0'
+__version__ = '0.1.1'
 
 
 class GentleForcedAligner(ClamsApp):
@@ -31,12 +31,13 @@ class GentleForcedAligner(ClamsApp):
                         "This app only works when Gentle is already installed locally."
                         "Unfortunately, Gentle is not distributed as a Python package distribution."
                         "To get Gentle installation instruction, see https://lowerquality.com/gentle/ "
-                        "Make sure install Gentle from the git commit specified in ``wrappee_version`` "
+                        "Make sure install Gentle from the git commit specified in ``analyzer_version`` "
                         "in this metadata.",
             app_version=__version__,
-            wrappee_version='2148efc',
-            license='MIT',
-            wrappee_license='MIT',
+            analyzer_version='2148efc',
+            app_license='MIT',
+            analyzer_license='MIT',
+            url="https://github.com/clamsproject/app-gentle-forced-aligner-wrapper", 
             identifier=f"http://apps.clams.ai/gentle-forced-aligner-wrapper/{__version__}",
         )
         metadata.add_input(DocumentTypes.TextDocument)

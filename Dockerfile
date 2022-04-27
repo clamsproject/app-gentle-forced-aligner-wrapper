@@ -1,4 +1,4 @@
-FROM clamsproject/clams-python-ffmpeg:0.4.4
+FROM clamsproject/clams-python-ffmpeg:0.5.1
 
 LABEL maintainer="CLAMS Team <admin@clams.ai>"
 LABEL issues="https://github.com/clamsproject/app-gentle-forced-aligner-wrapper/issues"
