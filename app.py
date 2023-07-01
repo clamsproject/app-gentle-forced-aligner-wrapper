@@ -34,7 +34,7 @@ class GentleForcedAligner(ClamsApp):
                         "Make sure install Gentle from the git commit specified in ``analyzer_version`` "
                         "in this metadata.",
             app_version=__version__,
-            analyzer_version='2148efc',
+            analyzer_version='f29245a',
             app_license='MIT',
             analyzer_license='MIT',
             url="https://github.com/clamsproject/app-gentle-forced-aligner-wrapper", 

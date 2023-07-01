@@ -10,7 +10,7 @@ RUN apt install -y build-essential zlib1g-dev automake autoconf sox gfortran lib
 # install gentle
 RUN git clone https://github.com/lowerquality/gentle.git /opt/gentle
 WORKDIR /opt/gentle
-RUN git checkout 2148efc
+RUN git checkout f29245a
 RUN git submodule init
 RUN git submodule update
 ## prep kaldi 

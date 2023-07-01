@@ -6,7 +6,7 @@ This is a CLASM app that wraps [Gentle](https://github.com/lowerquality/gentle).
 
 ### Locally
 
-You need to install Gentle first. Current version of the wrapper is based on Gentle commit [`2148efc`](https://github.com/lowerquality/gentle/tree/2148efccf065aaf86c7c99d89fdbea83d834089d), so it is recommended to use the same version of Gentle for your local installation. Use [`install.sh`](https://github.com/lowerquality/gentle/blob/2148efccf065aaf86c7c99d89fdbea83d834089d/install.sh) from Gentle codebase to first compile Kaldi-based binaries. It will also compile an instance of Kaldi under Gentle directory (`/path/to/gentle/ext/kaldi`), so you need a build toolchain for that. Once compilation (`install.sh`) is done, you should have 
+You need to install Gentle first. Current version of the wrapper is based on Gentle commit [`f29245a`](https://github.com/lowerquality/gentle/tree/f29245a3645988c6c3bfc5cf3602d60573f4bc9e), so it is recommended to use the same version of Gentle for your local installation. Use [`install.sh`](https://github.com/lowerquality/gentle/blob/2148efccf065aaf86c7c99d89fdbea83d834089d/install.sh) from Gentle codebase to first compile Kaldi-based binaries. It will also compile an instance of Kaldi under Gentle directory (`/path/to/gentle/ext/kaldi`), so you need a build toolchain for that. Once compilation (`install.sh`) is done, you should have 
 1. `/path/to/gentle/ext/k3` binary 
 1. `/path/to/gentle/ext/m3` binary 
 
