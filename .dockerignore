@@ -1,5 +1,11 @@
+.git/
+.github/
+.gitignore
+.dockerignore
 Dockerfile
-.dockerignore*
-.git*
-.idea
-__pycache__
+Containerfile
+bin/
+build/
+*~
+**/*.pyc
+**/__pyche__
